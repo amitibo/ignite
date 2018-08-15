@@ -2,6 +2,7 @@ import inspect
 import logging
 import sys
 import time
+from collections import defaultdict
 from enum import Enum
 
 from ignite._utils import _to_hours_mins_secs
@@ -38,28 +39,31 @@ class Engine(object):
             in each iteration, and returns data to be stored in the engine's state
 
     Example usage:
-    ```python
-    def train_and_store_loss(engine, batch):
-        inputs, targets = batch
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = loss_fn(outputs, targets)
-        loss.backward()
-        optimizer.step()
-        return loss.item()
 
-    engine = Engine(train_and_store_loss)
-    engine.run(data_loader)
+    .. code-block:: python
 
-    # Loss value is now stored in `engine.state.output`.
-    ```
+        def train_and_store_loss(engine, batch):
+            inputs, targets = batch
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = loss_fn(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            return loss.item()
+
+        engine = Engine(train_and_store_loss)
+        engine.run(data_loader)
+
+        # Loss value is now stored in `engine.state.output`.
+
     """
     def __init__(self, process_function):
-        self._event_handlers = {}
+        self._event_handlers = defaultdict(list)
         self._logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         self._logger.addHandler(logging.NullHandler())
         self._process_function = process_function
         self.should_terminate = False
+        self.should_terminate_single_epoch = False
         self.state = None
 
         if self._process_function is None:
@@ -83,23 +87,23 @@ class Engine(object):
               passed here, for example during `Events.EXCEPTION_RAISED`.
 
         Example usage:
-        ```python
-        engine = Engine(process_function)
 
-        def print_epoch(engine):
-            print("Epoch: {}".format(engine.state.epoch))
+        .. code-block:: python
 
-        engine.add_event_handler(Events.EPOCH_COMPLETED, print_epoch)
-        ```
+            engine = Engine(process_function)
+
+            def print_epoch(engine):
+                print("Epoch: {}".format(engine.state.epoch))
+
+            engine.add_event_handler(Events.EPOCH_COMPLETED, print_epoch)
+
         """
         if event_name not in Events.__members__.values():
             self._logger.error("attempt to add event handler to an invalid event %s ", event_name)
             raise ValueError("Event {} is not a valid event for this Engine".format(event_name))
 
-        self._check_signature(handler, 'handler', *args, **kwargs)
-
-        if event_name not in self._event_handlers:
-            self._event_handlers[event_name] = []
+        event_args = (Exception(), ) if event_name == Events.EXCEPTION_RAISED else ()
+        self._check_signature(handler, 'handler', *(event_args + args), **kwargs)
 
         self._event_handlers[event_name].append((handler, args, kwargs))
         self._logger.debug("added handler for event %s ", event_name)
@@ -151,29 +155,40 @@ class Engine(object):
                 func(self, *(event_args + args), **kwargs)
 
     def terminate(self):
-        """Sends terminate signal to the engine, so that it terminates after the current iteration
+        """Sends terminate signal to the engine, so that it terminates completely the run after the current iteration
         """
         self._logger.info("Terminate signaled. Engine will stop after current iteration is finished")
         self.should_terminate = True
 
+    def terminate_epoch(self):
+        """Sends terminate signal to the engine, so that it terminates the current epoch after the current iteration
+        """
+        self._logger.info("Terminate current epoch is signaled. "
+                          "Current epoch iteration will stop after current iteration is finished")
+        self.should_terminate_single_epoch = True
+
     def _run_once_on_dataset(self):
+        start_time = time.time()
+
         try:
-            start_time = time.time()
             for batch in self.state.dataloader:
                 self.state.batch = batch
                 self.state.iteration += 1
                 self._fire_event(Events.ITERATION_STARTED)
                 self.state.output = self._process_function(self, batch)
                 self._fire_event(Events.ITERATION_COMPLETED)
-                if self.should_terminate:
+                if self.should_terminate or self.should_terminate_single_epoch:
+                    self.should_terminate_single_epoch = False
                     break
 
-            time_taken = time.time() - start_time
-            hours, mins, secs = _to_hours_mins_secs(time_taken)
-            return hours, mins, secs
         except BaseException as e:
             self._logger.error("Current run is terminating due to exception: %s", str(e))
             self._handle_exception(e)
+
+        time_taken = time.time() - start_time
+        hours, mins, secs = _to_hours_mins_secs(time_taken)
+
+        return hours, mins, secs
 
     def _handle_exception(self, e):
         if Events.EXCEPTION_RAISED in self._event_handlers:
@@ -191,6 +206,7 @@ class Engine(object):
         Returns:
             State: output state
         """
+
         self.state = State(dataloader=data, epoch=0, max_epochs=max_epochs, metrics={})
 
         try:

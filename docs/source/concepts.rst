@@ -43,7 +43,7 @@ the run:
 - *epoch is started/completed*
 - *batch iteration is started/completed*
 
-Complete list of events can be found `here <https://github.com/pytorch/ignite/blob/master/ignite/engine/engine.py#L8>`_.
+Complete list of events can be found `here <https://github.com/pytorch/ignite/blob/master/ignite/engine/engine.py#L13>`_.
 
 Thus, user can execute a custom code as an event handler. Let us consider in more detail what happens when :meth:`Engine.run` is called:
 
@@ -90,9 +90,8 @@ Attaching an event handler is simple using method :meth:`Engine.add_event_handle
 State
 -----
 A state is introduced in :class:`ignite.engine.Engine` to store the output of the `process_function`, current epoch,
- iteration and other
-helpful information. For example, in case of supervised trainer, we can log computed loss value, completed iterations and
-epochs:
+iteration and other helpful information. For example, in case of supervised trainer, we can log computed loss value,
+completed iterations and epochs:
 
 .. code-block:: python
 
