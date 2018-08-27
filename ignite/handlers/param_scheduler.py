@@ -79,9 +79,95 @@ class CosineAnnealingScheduler(CyclicalScheduler):
     """
     Anneals 'start_value' to 'end_value' over each cycle.
     """
-    def __init__(self, *args, **kwargs):
-        super(CosineAnnealingScheduler, self).__init__(*args, **kwargs)
-
     def get_param(self):
         cycle_progress = self.event_index / self.cycle_size
-        return self.start_value + ((self.end_value - self.start_value) / 2) * (1 + np.cos(np.pi * cycle_progress))
+        return self.start_value + ((self.end_value - self.start_value) / 2) * (1 - np.cos(np.pi * cycle_progress))
+
+
+class CosineScheduler(CyclicalScheduler):
+    """
+    Cosine shaped cycle between 'start_value' to 'end_value' over each cycle.
+    """
+    def get_param(self):
+        cycle_progress = self.event_index / self.cycle_size
+        return self.start_value + ((self.end_value - self.start_value) / 2) * (1 - np.cos(2 * np.pi * cycle_progress))
+
+
+# class ConcatScheduler(ParamScheduler):
+#     """Concat a list of Schedulers.
+#
+#     Args:
+#         ...
+#         schedulers_list (list): List of (scheduler, event_duration).
+#     """
+#     def __init__(self,
+#                  optimizer,
+#                  param_name,
+#                  schedulers_list,
+#                  save_history=False):
+#         super(ConcatScheduler, self).__init__(optimizer, param_name, save_history=save_history)
+#         self._schedulers_list = schedulers_list
+#         self._schedulers_index = 0
+#         self._next_scheduler_switch = 0
+#
+#         for scheduler, _ in self._schedulers_list:
+#             assert scheduler.param_name == param_name, "All parameter schedulers should share the same parameter."
+#
+#     def _next_scheduler(self):
+#         self._scheduler, self._next_scheduler_switch = \
+#             self._schedulers_list[self._schedulers_index]
+#         self._scheduler.save_history = self.save_history
+#         self._schedulers_index = (self._schedulers_index + 1) % len(self._schedulers_list)
+#
+#     def get_param(self):
+#         return self._scheduler.get_param()
+#
+#     def __call__(self, engine):
+#         if self._next_scheduler_switch is not None:
+#             self._next_scheduler_switch -= 1
+#             if self._next_scheduler_switch < 0:
+#                 self._next_scheduler()
+#
+#         return self._scheduler(engine)
+
+
+class ConcatScheduler(ParamScheduler):
+    """Concat a list of Schedulers.
+
+    Args:
+        ...
+        schedulers_list (list): List of (scheduler_cls, scheduler_kwds, event_duration).
+    """
+    def __init__(self,
+                 optimizer,
+                 param_name,
+                 schedulers_list,
+                 save_history=False):
+        super(ConcatScheduler, self).__init__(optimizer, param_name, save_history=save_history)
+        self._schedulers_list = schedulers_list
+        self._schedulers_index = 0
+        self._next_scheduler_switch = 0
+
+    def _next_scheduler(self):
+        scheduler_cls, scheduler_kwds, self._next_scheduler_switch = \
+            self._schedulers_list[self._schedulers_index]
+
+        kwds = scheduler_kwds.copy()
+        kwds.update(
+            dict(
+                optimizer=self.optimizer,
+                param_name=self.param_name,
+                save_history=self.save_history
+            )
+        )
+
+        self._scheduler = scheduler_cls(**kwds)
+        self._schedulers_index = (self._schedulers_index + 1) % len(self._schedulers_list)
+
+    def __call__(self, engine):
+        if self._next_scheduler_switch is not None:
+            self._next_scheduler_switch -= 1
+            if self._next_scheduler_switch < 0:
+                self._next_scheduler()
+
+        return self._scheduler(engine)
