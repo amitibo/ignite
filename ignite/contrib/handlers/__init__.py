@@ -4,3 +4,4 @@ from ignite.contrib.handlers.param_scheduler import ParamScheduler, CyclicalSche
 
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
 from ignite.contrib.handlers.visdom_logger import VisdomLogger
+from ignite.contrib.handlers.mlflow_logger import MlflowLogger
