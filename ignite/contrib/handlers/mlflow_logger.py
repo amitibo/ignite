@@ -51,6 +51,7 @@ class MlflowLogger:
         update_period,          # type: int
         metric_names=None,      # type: List
         output_transform=None,  # type: Callable
+        param_history=False     # type: bool
     ):
 
         step = self.metrics_step[attach_id]
@@ -76,6 +77,9 @@ class MlflowLogger:
 
             metrics.extend([(name, value) for name, value in output_dict.items()])
 
+        if param_history:
+            metrics.extend([(name, value[-1]) for name, value in engine.state.param_history.items()])
+
         if not metrics:
             return
 
@@ -90,6 +94,7 @@ class MlflowLogger:
         update_period=1,                    # type: int
         metric_names=None,                  # type: List
         output_transform=None,              # type: Callable
+        param_history=False,                # type: bool
     ):
         """
         Attaches the mlflow plotter to an engine object
@@ -103,6 +108,7 @@ class MlflowLogger:
             output_transform (Callable, optional): a function to select what you want to plot from the engine's
                 output. This function may return either a dictionary with entries in the format of ``{name: value}``,
                 or a single scalar, which will be displayed with the default name `output`.
+            param_history (bool, optional): If true, will plot all the parameters logged in `param_history`.
         """
         if metric_names is not None and not isinstance(metric_names, list):
             raise TypeError("metric_names should be a list, got {} instead".format(type(metric_names)))
@@ -124,5 +130,6 @@ class MlflowLogger:
             prefix=prefix,
             update_period=update_period,
             metric_names=metric_names,
-            output_transform=output_transform
+            output_transform=output_transform,
+            param_history=param_history
         )
