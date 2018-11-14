@@ -78,7 +78,7 @@ class MlflowLogger:
             metrics.extend([(name, value) for name, value in output_dict.items()])
 
         if param_history:
-            metrics.extend([(name, value[-1]) for name, value in engine.state.param_history.items()])
+            metrics.extend([(name, value[-1][0]) for name, value in engine.state.param_history.items()])
 
         if not metrics:
             return
