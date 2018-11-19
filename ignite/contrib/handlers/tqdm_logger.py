@@ -12,6 +12,9 @@ class ProgressBar:
 
     Args:
         persist (bool, optional): set to ``True`` to persist the progress bar after completion (default = ``False``)
+        file (`io.TextIOWrapper` or `io.StringIO`, optional): Specifies where to output the progress messages
+            (default: sys.stderr). Uses `file.write(str)` and `file.flush()` methods.
+        mininterval (float, optional): Minimum progress display update interval [default: 0.1] seconds.
 
     Examples:
 
@@ -50,15 +53,25 @@ class ProgressBar:
         ``pbar.log_message`` to guarantee the correct format of the stdout.
     """
 
-    def __init__(self, persist=False):
+    def __init__(self, persist=False, file=None, mininterval=0.1):
         self.pbar = None
         self.persist = persist
+
+        if file is not None:
+            assert hasattr(file, "write") and hasattr(file, "flush"), \
+                "`file` object should have `write` and `flush` methods."
+
+        self.file = file
+        self.mininterval = mininterval
 
     def _reset(self, engine):
         self.pbar = tqdm(
             total=len(engine.state.dataloader),
             leave=self.persist,
-            bar_format='{desc}[{n_fmt}/{total_fmt}] {percentage:3.0f}%|{bar}{postfix} [{elapsed}<{remaining}]')
+            bar_format='{desc}[{n_fmt}/{total_fmt}] {percentage:3.0f}%|{bar}{postfix} [{elapsed}<{remaining}]',
+            file=self.file,
+            mininterval=self.mininterval
+        )
 
     def _close(self, engine):
         self.pbar.close()
