@@ -100,7 +100,7 @@ class TensorboardLogger(object):
 
         for metric_name, metric_value in zip(metric_names, metric_values):
             self.writer.add_scalar(
-                tag='/'.join([name, metric_name]),
+                tag='/'.join([name, metric_name.replace(' ', '_')]),
                 scalar_value=metric_value,
                 global_step=step
             )
@@ -196,7 +196,7 @@ class TensorboardLogger(object):
         engine.add_event_handler(
             plot_event,
             self._update,
-            name=name,
+            name=name.replace(' ', '_'),
             attach_id=attach_id,
             update_period=update_period,
             metric_names=metric_names,
