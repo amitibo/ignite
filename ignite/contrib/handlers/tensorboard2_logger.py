@@ -48,6 +48,13 @@ class TensorboardLogger(object):
     def __del__(self):
         self._close()
 
+    def __getattr__(self, item):
+
+        if item.startswith("add_"):
+            return getattr((self.writer, item))
+        else:
+            raise AttributeError("'{}' object has no attribute '{}'".format(repr(self), repr(item)))
+
     def _update(
         self,
         engine,                 # type: Engine
@@ -122,14 +129,16 @@ class TensorboardLogger(object):
                             global_step=step
                         )
 
-    def write_graph(
+    def add_graph(
             self,
             model,      # type: nn.Module
             dataloader  # type: DataLoader
 
     ):
         """
-        Plots engine.state.metrics on epoch or iteration.
+        Create a graph of the model.
+
+
         Args:
             model (nn.Module): model to be written
             dataloader (torch.utils.DataLoader): data loader for training data
@@ -154,6 +163,7 @@ class TensorboardLogger(object):
     ):
         """
         Attaches the TensorBoard event handler to an engine object.
+
         Args:
             engine (Engine): engine object.
             name (str): Name for the attached log.
