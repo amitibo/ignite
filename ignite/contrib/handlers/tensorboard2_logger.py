@@ -16,6 +16,10 @@ class TensorboardLogger(object):
 
     Args:
         log_dir (str, optional): Path for logging the summary files.
+        summary_writer (SummaryWriter object, optional): An initialized `tensorboardX.SummaryWriter` object.
+
+    Note:
+        Either 'log_dir' or 'summary_writer' should be given.
 
     Examples:
         Create a TensorBoard summary that visualizes metrics related to training,
@@ -34,16 +38,23 @@ class TensorboardLogger(object):
 
     def __init__(
             self,
-            log_dir=None,     # type: str,
+            log_dir=None,         # type: str
+            summary_writer=None,  # type: SummaryWriter
     ):
-        self.writer = SummaryWriter(log_dir=log_dir)
+        assert not (log_dir is None and summary_writer is None), \
+            "Either 'log_dir' or 'summary_writer' should be given."
+
+        if summary_writer is None:
+            summary_writer = SummaryWriter(log_dir=log_dir)
+
+        self.summary_writer = summary_writer
         self.metrics_step = []
 
     def _close(self):
         """
         Closes Summary Writer
         """
-        self.writer.close()
+        self.summary_writer.close()
 
     def __del__(self):
         self._close()
@@ -51,7 +62,7 @@ class TensorboardLogger(object):
     def __getattr__(self, item):
 
         if item.startswith("add_"):
-            return getattr((self.writer, item))
+            return getattr((self.summary_writer, item))
         else:
             raise AttributeError("'{}' object has no attribute '{}'".format(repr(self), repr(item)))
 
@@ -106,7 +117,7 @@ class TensorboardLogger(object):
         metric_names, metric_values = list(zip(*metrics))
 
         for metric_name, metric_value in zip(metric_names, metric_values):
-            self.writer.add_scalar(
+            self.summary_writer.add_scalar(
                 tag='/'.join([name, metric_name.replace(' ', '_')]),
                 scalar_value=metric_value,
                 global_step=step
@@ -116,14 +127,14 @@ class TensorboardLogger(object):
             for param_name, param in model.named_parameters():
                 param_name = param_name.replace('.', '/')
                 if param.requires_grad:
-                    self.writer.add_histogram(
+                    self.summary_writer.add_histogram(
                         tag=param_name,
                         values=param.cpu().data.numpy().flatten(),
                         global_step=step
                     )
 
                     if write_grads:
-                        self.writer.add_histogram(
+                        self.summary_writer.add_histogram(
                             tag=param_name + '_grad',
                             values=param.grad.cpu().data.numpy().flatten(),
                             global_step=step
@@ -138,7 +149,6 @@ class TensorboardLogger(object):
         """
         Create a graph of the model.
 
-
         Args:
             model (nn.Module): model to be written
             dataloader (torch.utils.DataLoader): data loader for training data
@@ -146,7 +156,7 @@ class TensorboardLogger(object):
 
         x, y = next(iter(dataloader))
         x = x.cuda() if next(model.parameters()).is_cuda else x
-        self.writer.add_graph(model, x)
+        self.summary_writer.add_graph(model, x)
 
     def attach(
             self,
