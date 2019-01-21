@@ -74,6 +74,7 @@ class TensorboardLogger(object):
         update_period,          # type: int
         metric_names=None,      # type: Union[Dict, List]
         output_transform=None,  # type: Callable
+        param_history=False,    # type: bool
         model=None,             # type: nn.Module
         histogram_freq=0,       # type: int
         write_grads=False,      # type: bool
@@ -110,6 +111,9 @@ class TensorboardLogger(object):
                 output_dict = {"output": output_dict}
 
             metrics.extend([(name, value) for name, value in output_dict.items()])
+
+        if param_history:
+            metrics.extend([(name, value[-1][0]) for name, value in engine.state.param_history.items()])
 
         if not metrics:
             return
@@ -166,6 +170,7 @@ class TensorboardLogger(object):
             update_period=1,                    # type: int
             metric_names=None,                  # type: Union[Dict, List]
             output_transform=None,              # type: Callable
+            param_history=False,                # type: bool
             step_callback=None,                 # type: Callable
             model=None,                         # type: nn.Module
             histogram_freq=0,                   # type: int
@@ -183,6 +188,7 @@ class TensorboardLogger(object):
             output_transform (Callable, optional): a function to select what you want to plot from the engine's
                 output. This function may return either a dictionary with entries in the format of ``{name: value}``,
                 or a single scalar, which will be displayed with the default name `output`.
+            param_history (bool, optional): If true, will plot all the parameters logged in `param_history`.
             step_callback (Callable, optional): a function to select what to use as the x value (step) from the engine's
                 state. This function should return a single scalar.
             model (nn.Module, optional): model to train.
@@ -221,6 +227,7 @@ class TensorboardLogger(object):
             update_period=update_period,
             metric_names=metric_names,
             output_transform=output_transform,
+            param_history=param_history,
             model=model,
             histogram_freq=histogram_freq,
             write_grads=write_grads
