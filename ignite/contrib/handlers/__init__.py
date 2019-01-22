@@ -1,6 +1,8 @@
 
+from ignite.contrib.handlers.param_scheduler import LinearCyclicalScheduler, CosineAnnealingScheduler, \
+    ConcatScheduler, LRScheduler, create_lr_scheduler_with_warmup
 from ignite.contrib.handlers.param_scheduler import ParamScheduler, CyclicalScheduler, \
-    LinearCyclicalScheduler, CosineAnnealingScheduler, ConcatScheduler, ReduceLROnPlateau
+    ReduceLROnPlateau
 
 from ignite.contrib.handlers.tensorboard2_logger import TensorboardLogger
 from ignite.contrib.handlers.tqdm_logger import ProgressBar
