@@ -57,8 +57,5 @@ class MetricsLambda(Metric):
         # recursively attach all its dependencies
         for index, metric in enumerate(self.args):
             if isinstance(metric, Metric):
-                if not engine.has_event_handler(metric.started, Events.EPOCH_STARTED):
-                    engine.add_event_handler(Events.EPOCH_STARTED, metric.started)
-                if not engine.has_event_handler(metric.iteration_completed, Events.ITERATION_COMPLETED):
-                    engine.add_event_handler(Events.ITERATION_COMPLETED, metric.iteration_completed)
+                metric.attach(engine, name + '|$^[{}]'.format(index))
         super(MetricsLambda, self).attach(engine, name)
