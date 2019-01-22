@@ -53,7 +53,6 @@ class MlflowLogger:
         output_transform=None,  # type: Callable
         param_history=False     # type: bool
     ):
-
         step = self.metrics_step[attach_id]
         self.metrics_step[attach_id] += 1
         if step % update_period != 0:
