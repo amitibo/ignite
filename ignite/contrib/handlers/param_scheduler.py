@@ -34,9 +34,7 @@ class ParamScheduler(with_metaclass(ABCMeta, object)):
 
     def __call__(self, engine, name=None):
 
-        value = self.get_param()
-
-        for param_group in self.optimizer_param_groups:
+        for param_group, value in zip(self.optimizer_param_groups, self.get_param()):
             param_group[self.param_name] = value
 
         if name is None:
@@ -191,7 +189,8 @@ class LinearCyclicalScheduler(CyclicalScheduler):
 
     def get_param(self):
         cycle_progress = self.event_index / self.cycle_size
-        return self.end_value + (self.start_value - self.end_value) * abs(cycle_progress - 0.5) * 2
+        value = self.end_value + (self.start_value - self.end_value) * abs(cycle_progress - 0.5) * 2
+        return [value] * len(self.optimizer_param_groups)
 
 
 class CosineAnnealingScheduler(CyclicalScheduler):
@@ -257,7 +256,8 @@ class CosineAnnealingScheduler(CyclicalScheduler):
         """Method to get current optimizer's parameter value
         """
         cycle_progress = self.event_index / self.cycle_size
-        return self.start_value + ((self.end_value - self.start_value) / 2) * (1 - math.cos(math.pi * cycle_progress))
+        value = self.start_value + ((self.end_value - self.start_value) / 2) * (1 - math.cos(math.pi * cycle_progress))
+        return [value] * len(self.optimizer_param_groups)
 
 
 class ConcatScheduler(ParamScheduler):
@@ -396,10 +396,6 @@ class LRScheduler(ParamScheduler):
             raise TypeError("Argument lr_scheduler should be a subclass of torch.optim.lr_scheduler._LRScheduler, "
                             "but given {}".format(type(lr_scheduler)))
 
-        if len(lr_scheduler.optimizer.param_groups) > 1:
-            raise ValueError("Optimizer passed to lr_scheduler should have a single param group, "
-                             "but currently there are {} param groups".format(len(lr_scheduler.optimizer.param_groups)))
-
         self.lr_scheduler = lr_scheduler
         super(LRScheduler, self).__init__(
             optimizer=self.lr_scheduler.optimizer,
@@ -414,11 +410,7 @@ class LRScheduler(ParamScheduler):
     def get_param(self):
         """Method to get current optimizer's parameter value
         """
-        lr_list = self.lr_scheduler.get_lr()
-        if len(lr_list) > 1:
-            raise ValueError("Optimizer passed to lr_scheduler should have a single param group, "
-                             "but currently there are {} param groups".format(len(lr_list)))
-        return lr_list[0]
+        return self.lr_scheduler.get_lr()
 
     @classmethod
     def simulate_values(cls, num_events, lr_scheduler, **kwargs):
@@ -445,8 +437,8 @@ class LRScheduler(ParamScheduler):
     def _copy_lr_scheduler(lr_scheduler):
         lr_scheduler_cls = lr_scheduler.__class__
         optimizer_cls = lr_scheduler.optimizer.__class__
-        t = torch.zeros([1], requires_grad=True)
-        dummy_optimizer = optimizer_cls([t], lr=0.1)
+        optimizer_params = deepcopy(lr_scheduler.optimizer.param_groups)
+        dummy_optimizer = optimizer_cls(optimizer_params, lr=0.1)
         dummy_optimizer.load_state_dict(lr_scheduler.optimizer.state_dict())
         kwargs = lr_scheduler.state_dict()
         del kwargs['base_lrs']
@@ -515,3 +507,130 @@ def create_lr_scheduler_with_warmup(lr_scheduler, warmup_start_value, warmup_end
         output_simulated_values.extend(ConcatScheduler.simulate_values(num_events=warmup_duration * 20,
                                                                        schedulers=schedulers, durations=durations))
     return combined_scheduler
+
+
+class ReduceLROnPlateau(ParamScheduler):
+    """An adapter class to call `torch.optim.lr_scheduler.ReduceLROnPlateau` object as `ignite` handlers.
+    Args:
+        optimizer (Optimizer): Wrapped optimizer.
+        metric_name (str, optional): name of  metrics by which to
+             measure plateau (either `metric_name` or
+            `output_transform` should be used, but not both).
+        output_transform (Callable, optional): a function to select
+            (from the engine's output) what you want
+            to measure plateau by. This function should return a
+            single scalar. (either `metric_name` or
+            `output_transform` should be used, but not both).
+        mode (str): One of `min`, `max`. In `min` mode, lr will
+            be reduced when the quantity monitored has stopped
+            decreasing; in `max` mode it will be reduced when the
+            quantity monitored has stopped increasing. Default: 'min'.
+        factor (float): Factor by which the learning rate will be
+            reduced. new_lr = lr * factor. Default: 0.1.
+        patience (int): Number of epochs with no improvement after
+            which learning rate will be reduced. For example, if
+            `patience = 2`, then we will ignore the first 2 epochs
+            with no improvement, and will only decrease the LR after the
+            3rd epoch if the loss still hasn't improved then.
+            Default: 10.
+        threshold (float): Threshold for measuring the new optimum,
+            to only focus on significant changes. Default: 1e-4.
+        threshold_mode (str): One of `rel`, `abs`. In `rel` mode,
+            dynamic_threshold = best * ( 1 + threshold ) in 'max'
+            mode or best * ( 1 - threshold ) in `min` mode.
+            In `abs` mode, dynamic_threshold = best + threshold in
+            `max` mode or best - threshold in `min` mode. Default: 'rel'.
+        cooldown (int): Number of epochs to wait before resuming
+            normal operation after lr has been reduced. Default: 0.
+        min_lr (float or list): A scalar or a list of scalars. A
+            lower bound on the learning rate of all param groups
+            or each group respectively. Default: 0.
+        eps (float): Minimal decay applied to lr. If the difference
+            between new and old lr is smaller than eps, the update is
+            ignored. Default: 1e-8.
+        save_history (bool, optional): whether to log the parameter values
+            (default=False)
+    .. code-block:: python
+        from ignite.contrib.handlers.param_scheduler import ReduceLROnPlateau
+        scheduler = ReduceLROnPlateau(optimizer, output_transform=lambda x: x, patience=2, factor=0.2)
+        trainer.add_event_handler(Events.ITERATION_COMPLETED, scheduler)
+    """
+    def __init__(self, optimizer, metric_name=None, output_transform=None, mode='min',
+                 factor=0.1, patience=10, threshold=1e-4, threshold_mode='rel',
+                 cooldown=0, min_lr=0, eps=1e-8, save_history=False, **kwds):
+
+        assert (metric_name is None and output_transform is not None) or \
+               (metric_name is not None and output_transform is None), \
+            "One of the parameters: `metric_name`, `output_transform` should be used but not both. "
+
+        from torch.optim.lr_scheduler import ReduceLROnPlateau as pytorch_ROP
+
+        self._lr_scheduler = pytorch_ROP(
+            optimizer=optimizer,
+            mode=mode,
+            factor=factor,
+            patience=patience,
+            verbose=False,
+            threshold=threshold,
+            threshold_mode=threshold_mode,
+            cooldown=cooldown,
+            min_lr=min_lr,
+            eps=eps
+        )
+        self.metric_name = metric_name
+        self.output_transform = output_transform
+
+        super(ReduceLROnPlateau, self).__init__(
+            optimizer=optimizer,
+            param_name='lr',
+            save_history=save_history
+        )
+
+    def __call__(self, engine, name=None):
+
+        #
+        # Call the pytorch scheduler step method.
+        #
+        if self.metric_name is not None:
+            if self.metric_name not in engine.state.metrics:
+                raise KeyError("metric {} not found in engine.state.metrics".format(self.metric_name))
+
+            metric = engine.state.metrics[self.metric_name]
+        else:
+            metric = self.output_transform(engine.state.output)
+
+        self._lr_scheduler.step(metric, engine.state.epoch)
+
+        #
+        # Call the ignite object __call__ method.
+        # Note:
+        # The 'lr' parameter will be updated for the second time but with the same value.
+        #
+        super(ReduceLROnPlateau, self).__call__(engine, name)
+
+    def get_param(self):
+        """Method to get current optimizer's parameter value
+        """
+
+        return [param_group[self.param_name] for param_group in self.optimizer_param_groups]
+
+    @classmethod
+    def simulate_values(cls, num_events, lr_scheduler, **kwargs):
+        """Method to simulate scheduled values during num_events events.
+
+        Args:
+            num_events (int): number of events during the simulation.
+            lr_scheduler (subclass of `torch.optim.lr_scheduler._LRScheduler`): lr_scheduler object to wrap.
+
+        Returns:
+            list of pairs: [event_index, value]
+
+        """
+        copy_lr_scheduler = LRScheduler._copy_lr_scheduler(lr_scheduler)
+        values = []
+        scheduler = cls(save_history=False, lr_scheduler=copy_lr_scheduler)
+        for i in range(num_events):
+            scheduler(engine=None)
+            values.append([i, scheduler.optimizer_param_groups[0][scheduler.param_name]])
+
+        return values
